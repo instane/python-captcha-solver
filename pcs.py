@@ -22,64 +22,100 @@ args = parser.parse_args()
 
 # Функция для представления данных при помощи pyplot
 def present_data(images_dict):
-    x, y = ceil((len(images_dict)) / 2), floor((len(images_dict)) / 2) # определяем размерность сетки
-    num = 0 # номер изображения
-    for key, value in images_dict.items(): # цикл для прогона по всем изображением
-        plt.subplot(x, y, num+1) # обозначаем место для изображения
-        plt.imshow(value, 'gray') # показываем изображение
-        plt.title(key) # пишем название
-        num += 1 # увеличиваем номер изображения
-    plt.show() # показываем созданное окно
+    # определяем размерность сетки
+    x, y = ceil((len(images_dict)) / 2), floor((len(images_dict)) / 2)
+    # задаем номер изображения
+    num = 0
+    # цикл для прогона по всем изображением
+    for key, value in images_dict.items():
+        # обозначаем место для изображения
+        plt.subplot(x, y, num+1)
+        # показываем изображение
+        plt.imshow(value, 'gray')
+        # пишем название
+        plt.title(key)
+        # увеличиваем номер изображения
+        num += 1
+    # показываем созданное окно
+    plt.show()
 
 # Функция для определения объектов на изображение(найденные помещаем в прямоугольник)
 def draw_rectangle(image, contours):
-    print("Contours length is", len(contours)) # вывод количества найденных контуров
-    i = 0 # переменная счетчик
-    areas = {} # словарь для координат прямоугольника
-    for cont in contours: # цикл для каждой точки найденных контуров
-        i += 1 # инкрементируем счетчик
-        areas[i] = cv2.contourArea(cont) # вычисляет область контура
-    areas_sorted = sorted(areas.items(), key=lambda x: x[1], reverse=True) # сортируем координаты
-    for i in range(0,len(areas)): # цикл для всех найденых координат
-        cont_num = areas_sorted[i][0] - 1 # номер контура
-        if cont_num != 999: # если контур не равен 999
-            x,y,w,h = cv2.boundingRect(contours[cont_num]) # вычисляет вершины прямоугольника
-            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 1) # рисуем прямоугольник на изображении
+    # вывод количества найденных контуров
+    print("Contours length is", len(contours))
+    # переменная счетчик
+    i = 0
+    # словарь для координат прямоугольника
+    areas = {}
+    # цикл для каждой точки найденных контуров
+    for cont in contours:
+        # инкрементируем счетчик
+        i += 1
+        # вычисляем область контура
+        areas[i] = cv2.contourArea(cont)
+    # сортируем координаты
+    areas_sorted = sorted(areas.items(), key=lambda x: x[1], reverse=True)
+    # цикл для всех найденых координат
+    for i in range(0,len(areas)):
+        # номер контура
+        cont_num = areas_sorted[i][0] - 1
+        # если контур не равен 999
+        if cont_num != 999:
+            # вычисляет вершины прямоугольника
+            x,y,w,h = cv2.boundingRect(contours[cont_num])
+            # рисуем прямоугольник на изображении
+            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 1)
+    # возвращаем изображение с нарисованными контурами
     return image
 
 # Функция для определения контуров
 def find_contours(image):
-    imcont, contours, hierarchy = cv2.findContours(image, 1, 2) # находим контуры
-    return contours # возвращаем контуры
+    # находим контуры
+    imcont, contours, hierarchy = cv2.findContours(image, 1, 2)
+    # возвращаем контуры
+    return contours
 
 # Функция для загрузки изображения
 def load_image(image_path):
-    return cv2.imread(image_path) # загружаем и возвращаем изображение
+    # загружаем и возвращаем изображение
+    return cv2.imread(image_path)
 
 # Функция для предварительной обработки
 def preprocess(image):
-    img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) # обесцвечиваем
-    den = cv2.fastNlMeansDenoising(img_gray, None, 21, 5, 21) # фильтр для удаления шума
-    thresh = cv2.threshold(den,127,255,0)[1] # бинарное изображение
+    # обесцвечиваем
+    img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # фильтр для удаления шума
+    den = cv2.fastNlMeansDenoising(img_gray, None, 21, 5, 21)
+    # бинарное изображение
+    thresh = cv2.threshold(den,127,255,0)[1]
+    # возвращаем предварительно обрадотанные изображения
     return den, thresh
 
 # Функция для распознавания символов
 def recognize(image, method):
-    if method == 'ocr': # если метов ocr
+    # если метод ocr
+    if method == 'ocr':
         # то пытаемся определить тесерактом
         return pytesseract.image_to_string(image, config='nobatch digits').replace(' ', '')
-    else: # иначе
-        return 'NOT IMPLEMENTED YET' # не реализовано
+    # иначе
+    else: 
+        # возвращаем не реализовано
+        return 'NOT IMPLEMENTED YET'
 
-# основная часть
-img = load_image(args.image) # загружаем изображение
-den, thresh = preprocess(img) # проводим предварительную обработку
-contours = find_contours(thresh) # находим контуры
+# загружаем изображение
+img = load_image(args.image)
+# проводим предварительную обработку
+den, thresh = preprocess(img)
+# находим контуры
+contours = find_contours(thresh)
 
-cv2.imwrite('temp.png',thresh) # сохраняем промежуточное изображение
-imcont = cv2.imread('temp.png') # считываем для дальнейшей обработки
+# сохраняем промежуточное изображение
+cv2.imwrite('temp.png',thresh)
+# считываем для дальнейшей обработки
+imcont = cv2.imread('temp.png')
 
-imcont = draw_rectangle(imcont, contours); # отрисовываем найденные контуры
+# отрисовываем найденные контуры
+imcont = draw_rectangle(imcont, contours)
 
 # выводим результата обработки
 print("Possible solution with {} method is {}".format(args.method, recognize(thresh, args.method)))
