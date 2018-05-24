@@ -5,7 +5,7 @@ pytesseract - Обертка для Tesseract(OCR)
 pyplot из matplotlib - Отрисовки графики
 floor и ceil из math - Округление расчётов
 '''
-import argparse, cv2, pytesseract
+import argparse, cv2, pytesseract, numpy
 from matplotlib import pyplot as plt
 from math import floor, ceil
 
@@ -87,31 +87,44 @@ def draw_rectangle(image, contours):
     i = 0
     # словарь для координат прямоугольника
     areas = {}
+    actual_areas = {}
+    # vprint(contours[9][0])
     # цикл для каждой точки найденных контуров
     for cont in contours:
-        # инкрементируем счетчик
-        i += 1
         # вычисляем область контура
         areas[i] = cv2.contourArea(cont)
+        x,y,w,h = cv2.boundingRect(cont)
+        actual_area = w*h
+        if actual_area > 10:
+            actual_areas[i] = actual_area
+        # инкрементируем счетчик
+        i += 1
     # сортируем координаты
     areas_sorted = sorted(areas.items(), key=lambda x: x[1], reverse=True)
+    actual_areas_sorted = sorted(actual_areas.items(), key=lambda x: x[1], reverse=True)
     # цикл для всех найденых координат
-    for i in range(0,len(areas)):
+    for i in range(0,len(actual_areas)):
+    # for i in range(0,4):
         # номер контура
-        cont_num = areas_sorted[i][0] - 1
+        cont_num = actual_areas_sorted[i][0]
+        vprint('cont_num', cont_num)
         # если контур не равен 999
-        if cont_num != 999:
-            # вычисляет вершины прямоугольника
-            x,y,w,h = cv2.boundingRect(contours[cont_num])
-            # рисуем прямоугольник на изображении
-            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 1)
+        # if cont_num != 999:
+        # вычисляет вершины прямоугольника
+        x,y,w,h = cv2.boundingRect(contours[cont_num])
+        vprint('area', w*h)
+        # рисуем прямоугольник на изображении
+        cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 1)
+        # cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 1)
     # возвращаем изображение с нарисованными контурами
     return image
 
 # функция для определения контуров
 def find_contours(image):
     # находим контуры
-    imcont, contours, hierarchy = cv2.findContours(image, 1, 2)
+    # imcont, contours, hierarchy = cv2.findContours(image, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    imcont, contours, hierarchy = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    vprint(hierarchy)
     # возвращаем контуры
     return contours
 
@@ -122,14 +135,27 @@ def load_image(image_path):
 
 # функция для предварительной обработки
 def preprocess(image):
+    def dominant_color(image):
+        colors = {0:0, 255:0}
+        for line in image:
+            for pixel in line:
+                colors[pixel] += 1
+        return 0 if colors[0] > colors[255] else 255
     # обесцвечиваем
-    img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     # фильтр для удаления шума
-    den = cv2.fastNlMeansDenoising(img_gray, None, 21, 5, 21)
+    # den = cv2.fastNlMeansDenoising(gray, None, 21, 5, 21)
+    den = cv2.fastNlMeansDenoising(gray, None, 3, 9, 21)
     # бинарное изображение
-    thresh = cv2.threshold(den,127,255,0)[1]
+    # thresh = cv2.threshold(den,127,255,0)[1]
+    thresh = cv2.threshold(den,150,255,0)[1]
+    if (dominant_color(thresh) == 255):
+        thresh = cv2.threshold(den,150,255,1)[1]
+    print(thresh[-1])
+    # den = cv2.fastNlMeansDenoising(thresh, None, 21, 5, 21)
+
     # возвращаем предварительно обрадотанные изображения
-    return den, thresh
+    return gray, den, thresh
 
 # функция для распознавания символов
 def recognize(image, method):
@@ -172,8 +198,39 @@ if (not args.image):
 
 # загружаем изображение
 img = load_image(args.image)
+# print('channels', img.channels())
+b = img.copy()
+# set green and red channels to 0
+b[:, :, 1] = 0
+b[:, :, 2] = 0
+
+
+g = img.copy()
+# set blue and red channels to 0
+g[:, :, 0] = 0
+g[:, :, 2] = 0
+
+r = img.copy()
+# set blue and green channels to 0
+r[:, :, 0] = 0
+r[:, :, 1] = 0
+imgg = img.copy()
+# kernel = numpy.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+# kernel = numpy.array([[0,-1,0], [-1,5,-1], [0,-1,0]])
+kernel = numpy.array([[0,1,0], [1,-4,1], [0,1,0]])
+kernel = numpy.ones((5,5),numpy.float32)/25
+imgg = cv2.filter2D(imgg,-1,kernel)
+# r = cv2.Laplacian(img.copy(),cv2.CV_64F)
+# g = cv2.Sobel(img,cv2.CV_64F,1,0,ksize=5)
+# b = cv2.Sobel(img,cv2.CV_64F,0,1,ksize=5)
+
+# b = cv2.CreateImage(cv2.GetSize(image), image.depth, 1)
+# g = cv2.CreateImage(cv2.GetSize(image), image.depth, 1)
+# r = cv2.CreateImage(cv2.GetSize(image), image.depth, 1)
+# cv2.Split(image, b, g, r, None)
+# imgg = cv2.filter2D(imgg, -1, kernel)
 # проводим предварительную обработку
-den, thresh = preprocess(img)
+gray, den, thresh = preprocess(img)
 
 # если программа запущена без аргумента --disable-recognition
 if (not args.no_recognize):
@@ -192,5 +249,6 @@ if (not args.no_intermediate):
 
     # отрисовываем найденные контуры
     imcont = draw_rectangle(imcont, contours)
+    
     # показываем полученный результат
-    present_data({'orig': img, 'fastNlMeansDenoising': den, 'thresh': thresh, 'rectangle': imcont})
+    present_data({'orig': img, 'gray':gray, 'imgg': imgg, 'r':r, 'g':g, 'b':b, 'fastNlMeansDenoising': den, 'thresh': thresh, 'rectangle': imcont})
