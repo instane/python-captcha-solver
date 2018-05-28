@@ -174,7 +174,8 @@ def recognize(image, method):
 
 # функция для распознавания символов с ocr
 def __recognize_ocr(image):
-    return pytesseract.image_to_string(image, config='nobatch digits').replace(' ', '')
+    #return pytesseract.image_to_string(image, config='nobatch digits').replace(' ', '')
+    return pytesseract.image_to_string(image).replace(' ', '')
 
 # функция для распознавания символов с нейросетью
 def __recognize_nn(image):
@@ -235,7 +236,29 @@ gray, den, thresh = preprocess(img)
 # если программа запущена без аргумента --disable-recognition
 if (not args.no_recognize):
     # выводим результата обработки
-    print("Possible solution with {} method is {}".format(args.method, recognize(thresh, args.method)))
+    recognized_text = recognize(thresh, args.method)
+    delimiter = recognized_text[2]
+    print(delimiter)
+    print("Possible solution with {} method is {}".format(args.method, recognized_text))
+    if delimiter == ':':
+        if len(recognized_text) == 5:
+            h = recognized_text[:2]
+            m = recognized_text[3:]
+            print(h,m)
+            print("Maybe time is {}:{} and it is {} minutes or seconds".format(h,m,int(h)*60+int(m)))
+        if len(recognized_text) == 8:
+            h = recognized_text[:2]
+            m = recognized_text[3:5]
+            s = recognized_text[6:]
+            print(h,m,s)
+            print("Maybe time is {}:{}:{} and it is {} seconds".format(h,m,s,int(h)*60*60+int(m)*60+int(s)))
+    elif delimiter == '/':
+        d = recognized_text[:2]
+        m = recognized_text[3:5]
+        y = recognized_text[6:]
+        print("Maybe it is {} day, {} month and {} year".format(d,m,y))
+    else:
+        print("The number is {}".format(recognized_text))
 
 # если программа запущена без аргумента --disable-intermediate-output
 if (not args.no_intermediate):
