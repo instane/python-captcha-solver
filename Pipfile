@@ -8,6 +8,8 @@ opencv-python = "*"
 numpy = "*"
 pytesseract = "*"
 matplotlib = "*"
+tensorflow = "*"
+keras = "*"
 
 [dev-packages]
 

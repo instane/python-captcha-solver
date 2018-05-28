@@ -5,7 +5,7 @@ pytesseract - Обертка для Tesseract(OCR)
 pyplot из matplotlib - Отрисовки графики
 floor и ceil из math - Округление расчётов
 '''
-import argparse, cv2, pytesseract
+import argparse, cv2, pytesseract, numpy
 from matplotlib import pyplot as plt
 from math import floor, ceil
 
@@ -25,6 +25,9 @@ parser.add_argument('--disable-intermediate-output', '-dio', action='store_true'
 # добавление аргумента отключения распознавания
 parser.add_argument('--disable-recognition', '-dr', action='store_true',
                    dest='no_recognize', help='disable image recognition')
+# добавление аргумента распознавания спец задания
+parser.add_argument('--special', '-s', action='store_true',
+                   dest='special', help='enable special task recognition')
 # добавление аргумента расширенного вывода
 parser.add_argument('--verbose', '-v', action='store_true',
                    dest='verbose', help='produce verbose  output')
@@ -87,31 +90,45 @@ def draw_rectangle(image, contours):
     i = 0
     # словарь для координат прямоугольника
     areas = {}
+    actual_areas = {}
     # цикл для каждой точки найденных контуров
     for cont in contours:
-        # инкрементируем счетчик
-        i += 1
         # вычисляем область контура
         areas[i] = cv2.contourArea(cont)
+        # получаем размеры контура
+        x,y,w,h = cv2.boundingRect(cont)
+        # вычисляем плозадь внутри контура
+        actual_area = w*h
+        # если площадь внутри контура > 10
+        if actual_area > 10:
+            # добавляем его в список
+            actual_areas[i] = actual_area
+        # инкрементируем счетчик
+        i += 1
     # сортируем координаты
     areas_sorted = sorted(areas.items(), key=lambda x: x[1], reverse=True)
+    actual_areas_sorted = sorted(actual_areas.items(), key=lambda x: x[1], reverse=True)
     # цикл для всех найденых координат
-    for i in range(0,len(areas)):
+    for i in range(0,len(actual_areas)):
         # номер контура
-        cont_num = areas_sorted[i][0] - 1
-        # если контур не равен 999
-        if cont_num != 999:
-            # вычисляет вершины прямоугольника
-            x,y,w,h = cv2.boundingRect(contours[cont_num])
-            # рисуем прямоугольник на изображении
-            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 1)
+        cont_num = actual_areas_sorted[i][0]
+        # вывод номера контура для отладки
+        vprint('cont_num', cont_num)
+        # вычисляет вершины прямоугольника
+        x,y,w,h = cv2.boundingRect(contours[cont_num])
+        # вывод площади контура для отладки
+        vprint('area', w*h)
+        # рисуем прямоугольник на изображении
+        cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 1)
     # возвращаем изображение с нарисованными контурами
     return image
 
 # функция для определения контуров
 def find_contours(image):
     # находим контуры
-    imcont, contours, hierarchy = cv2.findContours(image, 1, 2)
+    imcont, contours, hierarchy = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # вывод иерархии контуров для отладки
+    vprint(hierarchy)
     # возвращаем контуры
     return contours
 
@@ -122,14 +139,31 @@ def load_image(image_path):
 
 # функция для предварительной обработки
 def preprocess(image):
+    # функция для определения основного цвета
+    def dominant_color(image):
+        # инициализация словаря для возможных цветов
+        colors = {0:0, 255:0}
+        # цикл по каждой строке изображения
+        for line in image:
+            # цикл по кадому пикселю из строки
+            for pixel in line:
+                # инкрементируем значение в словаре для текущего цвета пикселя
+                colors[pixel] += 1
+        # возвращаем 0 если черный превалирует, иначе 255
+        return 0 if colors[0] > colors[255] else 255
     # обесцвечиваем
-    img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     # фильтр для удаления шума
-    den = cv2.fastNlMeansDenoising(img_gray, None, 21, 5, 21)
+    # den = cv2.fastNlMeansDenoising(gray, None, 21, 5, 21)
+    den = cv2.fastNlMeansDenoising(gray, None, 3, 9, 21)
     # бинарное изображение
-    thresh = cv2.threshold(den,127,255,0)[1]
-    # возвращаем предварительно обрадотанные изображения
-    return den, thresh
+    thresh = cv2.threshold(den,150,255,0)[1]
+    # если превалирует белый цвет
+    if (dominant_color(thresh) == 255):
+        # то инвертируем
+        thresh = cv2.threshold(den,150,255,1)[1]
+    # возвращаем предварительно обработанные изображения
+    return gray, den, thresh
 
 # функция для распознавания символов
 def recognize(image, method):
@@ -148,10 +182,18 @@ def recognize(image, method):
 
 # функция для распознавания символов с ocr
 def __recognize_ocr(image):
-    return pytesseract.image_to_string(image, config='nobatch digits').replace(' ', '')
+    # если программа запущена с аргументом --special
+    if args.special:
+        # ищем все символы, включая ":" и "/"
+        return pytesseract.image_to_string(image).replace(' ', '')
+    # иначе
+    else:
+        # ищем только цифры
+        return pytesseract.image_to_string(image, config='nobatch digits').replace(' ', '')
 
 # функция для распознавания символов с нейросетью
 def __recognize_nn(image):
+    # пока не реализовано
     return 'NOT IMPLEMENTED YET'
 
 # если программа запущена с аргументом --method_list
@@ -172,25 +214,54 @@ if (not args.image):
 
 # загружаем изображение
 img = load_image(args.image)
+
 # проводим предварительную обработку
-den, thresh = preprocess(img)
+gray, den, thresh = preprocess(img)
 
 # если программа запущена без аргумента --disable-recognition
 if (not args.no_recognize):
+    # получаем результат обработки
+    recognized_text = recognize(thresh, args.method)
     # выводим результата обработки
-    print("Possible solution with {} method is {}".format(args.method, recognize(thresh, args.method)))
+    print("Possible solution with {} method is {}".format(args.method, recognized_text))
+    # если программа запущена с аргументом --special
+    if (args.special):
+        # находим разделитель
+        delimiter = recognized_text[2]
+        # находим первую группу символов
+        first = recognized_text[:2]
+        # находим вторую группу символов
+        second = recognized_text[3:]
+        # находим третью группу символов
+        third = recognized_text[6:]
+        # если разделитель равен ':' и количество определенных символов равно 5 или 8
+        if delimiter == ':' and (len(recognized_text) == 5 or len(recognized_text) == 8):
+            # если количество определенных символов равно 5
+            if len(recognized_text) == 5:
+                # выводим определенное время
+                print("The time is {}:{} and it is {} seconds".format(first,second,int(first)*60+int(second)))
+            # если количество определенных символов равно 8
+            if len(recognized_text) == 8:
+                # выводим определенное время с часами
+                print("The time is {}:{}:{} and it is {} seconds".format(first,second,third,int(first)*60*60+int(second)*60+int(third)))
+        # иначе если разделитель равен '/' и количество определенных символов равно 8
+        elif delimiter == '/' and len(recognized_text) == 8:
+            # выводим определенную дату
+            print("The date is {} day, {} month and {} year".format(first,second,third))
+        # иначе
+        else:
+            # выводим определенное число
+            print("The number is {}".format(recognized_text))
 
 # если программа запущена без аргумента --disable-intermediate-output
 if (not args.no_intermediate):
     # находим контуры
     contours = find_contours(thresh)
-
     # сохраняем промежуточное изображение
     cv2.imwrite('temp.png',thresh)
     # считываем для дальнейшей обработки
     imcont = cv2.imread('temp.png')
-
     # отрисовываем найденные контуры
     imcont = draw_rectangle(imcont, contours)
     # показываем полученный результат
-    present_data({'orig': img, 'fastNlMeansDenoising': den, 'thresh': thresh, 'rectangle': imcont})
+    present_data({'orig': img, 'gray':gray, 'fastNlMeansDenoising': den, 'thresh': thresh, 'rectangle': imcont})
