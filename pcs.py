@@ -25,6 +25,9 @@ parser.add_argument('--disable-intermediate-output', '-dio', action='store_true'
 # добавление аргумента отключения распознавания
 parser.add_argument('--disable-recognition', '-dr', action='store_true',
                    dest='no_recognize', help='disable image recognition')
+# добавление аргумента распознавания спец задания
+parser.add_argument('--special', '-s', action='store_true',
+                   dest='special', help='enable special task recognition')
 # добавление аргумента расширенного вывода
 parser.add_argument('--verbose', '-v', action='store_true',
                    dest='verbose', help='produce verbose  output')
@@ -88,14 +91,17 @@ def draw_rectangle(image, contours):
     # словарь для координат прямоугольника
     areas = {}
     actual_areas = {}
-    # vprint(contours[9][0])
     # цикл для каждой точки найденных контуров
     for cont in contours:
         # вычисляем область контура
         areas[i] = cv2.contourArea(cont)
+        # получаем размеры контура
         x,y,w,h = cv2.boundingRect(cont)
+        # вычисляем плозадь внутри контура
         actual_area = w*h
+        # если площадь внутри контура > 10
         if actual_area > 10:
+            # добавляем его в список
             actual_areas[i] = actual_area
         # инкрементируем счетчик
         i += 1
@@ -104,26 +110,24 @@ def draw_rectangle(image, contours):
     actual_areas_sorted = sorted(actual_areas.items(), key=lambda x: x[1], reverse=True)
     # цикл для всех найденых координат
     for i in range(0,len(actual_areas)):
-    # for i in range(0,4):
         # номер контура
         cont_num = actual_areas_sorted[i][0]
+        # вывод номера контура для отладки
         vprint('cont_num', cont_num)
-        # если контур не равен 999
-        # if cont_num != 999:
         # вычисляет вершины прямоугольника
         x,y,w,h = cv2.boundingRect(contours[cont_num])
+        # вывод площади контура для отладки
         vprint('area', w*h)
         # рисуем прямоугольник на изображении
         cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 1)
-        # cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 1)
     # возвращаем изображение с нарисованными контурами
     return image
 
 # функция для определения контуров
 def find_contours(image):
     # находим контуры
-    # imcont, contours, hierarchy = cv2.findContours(image, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     imcont, contours, hierarchy = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # вывод иерархии контуров для отладки
     vprint(hierarchy)
     # возвращаем контуры
     return contours
@@ -135,11 +139,17 @@ def load_image(image_path):
 
 # функция для предварительной обработки
 def preprocess(image):
+    # функция для определения основного цвета
     def dominant_color(image):
+        # инициализация словаря для возможных цветов
         colors = {0:0, 255:0}
+        # цикл по каждой строке изображения
         for line in image:
+            # цикл по кадому пикселю из строки
             for pixel in line:
+                # инкрементируем значение в словаре для текущего цвета пикселя
                 colors[pixel] += 1
+        # возвращаем 0 если черный превалирует, иначе 255
         return 0 if colors[0] > colors[255] else 255
     # обесцвечиваем
     gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
@@ -147,14 +157,12 @@ def preprocess(image):
     # den = cv2.fastNlMeansDenoising(gray, None, 21, 5, 21)
     den = cv2.fastNlMeansDenoising(gray, None, 3, 9, 21)
     # бинарное изображение
-    # thresh = cv2.threshold(den,127,255,0)[1]
     thresh = cv2.threshold(den,150,255,0)[1]
+    # если превалирует белый цвет
     if (dominant_color(thresh) == 255):
+        # то инвертируем
         thresh = cv2.threshold(den,150,255,1)[1]
-    print(thresh[-1])
-    # den = cv2.fastNlMeansDenoising(thresh, None, 21, 5, 21)
-
-    # возвращаем предварительно обрадотанные изображения
+    # возвращаем предварительно обработанные изображения
     return gray, den, thresh
 
 # функция для распознавания символов
@@ -174,11 +182,18 @@ def recognize(image, method):
 
 # функция для распознавания символов с ocr
 def __recognize_ocr(image):
-    #return pytesseract.image_to_string(image, config='nobatch digits').replace(' ', '')
-    return pytesseract.image_to_string(image).replace(' ', '')
+    # если программа запущена с аргументом --special
+    if args.special:
+        # ищем все символы, включая ":" и "/"
+        return pytesseract.image_to_string(image).replace(' ', '')
+    # иначе
+    else:
+        # ищем только цифры
+        return pytesseract.image_to_string(image, config='nobatch digits').replace(' ', '')
 
 # функция для распознавания символов с нейросетью
 def __recognize_nn(image):
+    # пока не реализовано
     return 'NOT IMPLEMENTED YET'
 
 # если программа запущена с аргументом --method_list
@@ -199,79 +214,54 @@ if (not args.image):
 
 # загружаем изображение
 img = load_image(args.image)
-# print('channels', img.channels())
-b = img.copy()
-# set green and red channels to 0
-b[:, :, 1] = 0
-b[:, :, 2] = 0
 
-
-g = img.copy()
-# set blue and red channels to 0
-g[:, :, 0] = 0
-g[:, :, 2] = 0
-
-r = img.copy()
-# set blue and green channels to 0
-r[:, :, 0] = 0
-r[:, :, 1] = 0
-imgg = img.copy()
-# kernel = numpy.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-# kernel = numpy.array([[0,-1,0], [-1,5,-1], [0,-1,0]])
-kernel = numpy.array([[0,1,0], [1,-4,1], [0,1,0]])
-kernel = numpy.ones((5,5),numpy.float32)/25
-imgg = cv2.filter2D(imgg,-1,kernel)
-# r = cv2.Laplacian(img.copy(),cv2.CV_64F)
-# g = cv2.Sobel(img,cv2.CV_64F,1,0,ksize=5)
-# b = cv2.Sobel(img,cv2.CV_64F,0,1,ksize=5)
-
-# b = cv2.CreateImage(cv2.GetSize(image), image.depth, 1)
-# g = cv2.CreateImage(cv2.GetSize(image), image.depth, 1)
-# r = cv2.CreateImage(cv2.GetSize(image), image.depth, 1)
-# cv2.Split(image, b, g, r, None)
-# imgg = cv2.filter2D(imgg, -1, kernel)
 # проводим предварительную обработку
 gray, den, thresh = preprocess(img)
 
 # если программа запущена без аргумента --disable-recognition
 if (not args.no_recognize):
-    # выводим результата обработки
+    # получаем результат обработки
     recognized_text = recognize(thresh, args.method)
-    delimiter = recognized_text[2]
-    print(delimiter)
+    # выводим результата обработки
     print("Possible solution with {} method is {}".format(args.method, recognized_text))
-    if delimiter == ':':
-        if len(recognized_text) == 5:
-            h = recognized_text[:2]
-            m = recognized_text[3:]
-            print(h,m)
-            print("Maybe time is {}:{} and it is {} minutes or seconds".format(h,m,int(h)*60+int(m)))
-        if len(recognized_text) == 8:
-            h = recognized_text[:2]
-            m = recognized_text[3:5]
-            s = recognized_text[6:]
-            print(h,m,s)
-            print("Maybe time is {}:{}:{} and it is {} seconds".format(h,m,s,int(h)*60*60+int(m)*60+int(s)))
-    elif delimiter == '/':
-        d = recognized_text[:2]
-        m = recognized_text[3:5]
-        y = recognized_text[6:]
-        print("Maybe it is {} day, {} month and {} year".format(d,m,y))
-    else:
-        print("The number is {}".format(recognized_text))
+    # если программа запущена с аргументом --special
+    if (args.special):
+        # находим разделитель
+        delimiter = recognized_text[2]
+        # находим первую группу символов
+        first = recognized_text[:2]
+        # находим вторую группу символов
+        second = recognized_text[3:]
+        # находим третью группу символов
+        third = recognized_text[6:]
+        # если разделитель равен ':' и количество определенных символов равно 5 или 8
+        if delimiter == ':' and (len(recognized_text) == 5 or len(recognized_text) == 8):
+            # если количество определенных символов равно 5
+            if len(recognized_text) == 5:
+                # выводим определенное время
+                print("The time is {}:{} and it is {} seconds".format(first,second,int(first)*60+int(second)))
+            # если количество определенных символов равно 8
+            if len(recognized_text) == 8:
+                # выводим определенное время с часами
+                print("The time is {}:{}:{} and it is {} seconds".format(first,second,third,int(first)*60*60+int(second)*60+int(third)))
+        # иначе если разделитель равен '/' и количество определенных символов равно 8
+        elif delimiter == '/' and len(recognized_text) == 8:
+            # выводим определенную дату
+            print("The date is {} day, {} month and {} year".format(first,second,third))
+        # иначе
+        else:
+            # выводим определенное число
+            print("The number is {}".format(recognized_text))
 
 # если программа запущена без аргумента --disable-intermediate-output
 if (not args.no_intermediate):
     # находим контуры
     contours = find_contours(thresh)
-
     # сохраняем промежуточное изображение
     cv2.imwrite('temp.png',thresh)
     # считываем для дальнейшей обработки
     imcont = cv2.imread('temp.png')
-
     # отрисовываем найденные контуры
     imcont = draw_rectangle(imcont, contours)
-    
     # показываем полученный результат
-    present_data({'orig': img, 'gray':gray, 'imgg': imgg, 'r':r, 'g':g, 'b':b, 'fastNlMeansDenoising': den, 'thresh': thresh, 'rectangle': imcont})
+    present_data({'orig': img, 'gray':gray, 'fastNlMeansDenoising': den, 'thresh': thresh, 'rectangle': imcont})
